@@ -80,11 +80,11 @@ export default function Home() {
 
       const result = await response.json();
 
-      // Save the translated filename
-      setTranslatedFileName(result.output_filename);
+      // Save the translated filename (backend uses 'filename' field)
+      setTranslatedFileName(result.filename);
 
       // Download the translated file automatically
-      await handleDownload(result.output_filename);
+      await handleDownload(result.filename);
 
       setProgress(100);
       setLogs((prev) => [...prev, "✅ Translation completed successfully!"]);
