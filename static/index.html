@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel Translation Service</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container mt-5">
+        <!-- Navigation -->
+        <nav class="mb-3">
+            <a href="/static/settings.html" class="btn btn-outline-secondary">⚙️ API Key 관리</a>
+        </nav>
+
+        <div class="text-center mb-4">
+            <h1 class="display-4">📊 Excel Translation Service</h1>
+            <p class="lead text-muted">Translate your Excel files using GPT AI</p>
+        </div>
+        
+        <div class="card shadow">
+            <div class="card-body p-4">
+                <form id="translationForm">
+                    <!-- API Key -->
+                    <div class="mb-4">
+                        <label for="apiKey" class="form-label fw-bold">
+                            🔑 GPT API Key <span class="badge bg-success">Configured in .env</span>
+                        </label>
+                        <input
+                            type="password"
+                            class="form-control form-control-lg"
+                            id="apiKey"
+                            placeholder="Leave empty to use .env key, or enter your own"
+                        >
+                        <small class="form-text text-success">
+                            ✓ API key is configured in .env file. You can leave this empty.
+                        </small>
+                    </div>
+                    
+                    <!-- Source Language -->
+                    <div class="mb-4">
+                        <label for="sourceLang" class="form-label fw-bold">
+                            🌍 시작 언어 (Source Language)
+                        </label>
+                        <select class="form-select form-select-lg" id="sourceLang">
+                            <option value="ko">한국어 (Korean)</option>
+                            <option value="en">English</option>
+                            <option value="ja">日本語 (Japanese)</option>
+                            <option value="zh">中文 (Chinese)</option>
+                            <option value="es">Español (Spanish)</option>
+                            <option value="fr">Français (French)</option>
+                            <option value="de">Deutsch (German)</option>
+                            <option value="ru">Русский (Russian)</option>
+                            <option value="pt">Português (Portuguese)</option>
+                            <option value="it">Italiano (Italian)</option>
+                            <option value="ar">العربية (Arabic)</option>
+                            <option value="hi">हिन्दी (Hindi)</option>
+                            <option value="th">ไทย (Thai)</option>
+                            <option value="vi">Tiếng Việt (Vietnamese)</option>
+                            <option value="id">Bahasa Indonesia (Indonesian)</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Target Language -->
+                    <div class="mb-4">
+                        <label for="targetLang" class="form-label fw-bold">
+                            🎯 완료 언어 (Target Language)
+                        </label>
+                        <select class="form-select form-select-lg" id="targetLang">
+                            <option value="en">English</option>
+                            <option value="ko">한국어 (Korean)</option>
+                            <option value="ja">日本語 (Japanese)</option>
+                            <option value="zh">中文 (Chinese)</option>
+                            <option value="es">Español (Spanish)</option>
+                            <option value="fr">Français (French)</option>
+                            <option value="de">Deutsch (German)</option>
+                            <option value="ru">Русский (Russian)</option>
+                            <option value="pt">Português (Portuguese)</option>
+                            <option value="it">Italiano (Italian)</option>
+                            <option value="ar">العربية (Arabic)</option>
+                            <option value="hi">हिन्दी (Hindi)</option>
+                            <option value="th">ไทย (Thai)</option>
+                            <option value="vi">Tiếng Việt (Vietnamese)</option>
+                            <option value="id">Bahasa Indonesia (Indonesian)</option>
+                        </select>
+                    </div>
+                    
+                    <!-- GPT Model -->
+                    <div class="mb-4">
+                        <label for="model" class="form-label fw-bold">
+                            🤖 GPT Model
+                        </label>
+                        <select class="form-select form-select-lg" id="model">
+                            <option value="gpt-4.1-mini">GPT-4.1 Mini (균형잡힌 성능 - 추천)</option>
+                            <option value="gpt-4.1-nano">GPT-4.1 Nano (초저렴)</option>
+                            <option value="gpt-4o">GPT-4o (고품질)</option>
+                            <option value="gpt-5-nano">GPT-5 Nano (상세 답변)</option>
+                            <option value="gpt-4o-mini">GPT-4o Mini</option>
+                            <option value="gpt-4-turbo-preview">GPT-4 Turbo</option>
+                            <option value="gpt-4">GPT-4</option>
+                        </select>
+                    </div>
+                    
+                    <!-- File Upload -->
+                    <div class="mb-4">
+                        <label for="fileInput" class="form-label fw-bold">
+                            📁 Excel File (XLSX/CSV) <span class="text-danger">*</span>
+                        </label>
+                        <input 
+                            type="file" 
+                            class="form-control form-control-lg" 
+                            id="fileInput" 
+                            accept=".xlsx,.csv" 
+                            required
+                        >
+                        <small class="form-text text-muted">
+                            Maximum file size: 50MB | Supported formats: .xlsx, .csv
+                        </small>
+                    </div>
+                    
+                    <!-- Submit Button -->
+                    <button type="submit" class="btn btn-primary btn-lg w-100" id="submitBtn">
+                        <span id="submitBtnText">🚀 Start Translation</span>
+                        <span id="submitBtnSpinner" class="spinner-border spinner-border-sm ms-2" style="display: none;"></span>
+                    </button>
+                </form>
+                
+                <!-- Progress -->
+                <div id="progressContainer" class="mt-4" style="display: none;">
+                    <div class="progress" style="height: 30px;">
+                        <div
+                            class="progress-bar progress-bar-striped progress-bar-animated"
+                            role="progressbar"
+                            style="width: 100%"
+                        >
+                            Processing...
+                        </div>
+                    </div>
+                    <p class="text-center mt-3 text-muted" id="statusMessage">
+                        <span class="spinner-border spinner-border-sm me-2"></span>
+                        Translating your file... This may take a few minutes.
+                    </p>
+                    
+                    <!-- Real-time Logs -->
+                    <div class="card mt-3">
+                        <div class="card-header bg-dark text-white">
+                            <strong>📋 Translation Logs</strong>
+                            <button class="btn btn-sm btn-outline-light float-end" id="clearLogsBtn" style="display: none;">
+                                Clear
+                            </button>
+                        </div>
+                        <div class="card-body bg-light" style="max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 0.85rem;">
+                            <div id="logContainer"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Result -->
+                <div id="resultContainer" class="mt-4" style="display: none;">
+                    <div class="alert" id="resultAlert" role="alert"></div>
+                    <button class="btn btn-success btn-lg w-100" id="downloadBtn" style="display: none;">
+                        📥 Download Translated File
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Info Section -->
+        <div class="row mt-5">
+            <div class="col-md-4">
+                <div class="card text-center h-100">
+                    <div class="card-body">
+                        <h3>🌍</h3>
+                        <h5 class="card-title">Multi-Language</h5>
+                        <p class="card-text">Translate to any language with custom prompts</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card text-center h-100">
+                    <div class="card-body">
+                        <h3>📊</h3>
+                        <h5 class="card-title">Multi-Sheet Support</h5>
+                        <p class="card-text">Handles Excel files with multiple sheets</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card text-center h-100">
+                    <div class="card-body">
+                        <h3>🔒</h3>
+                        <h5 class="card-title">Secure</h5>
+                        <p class="card-text">Your API key and files are never stored</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Footer -->
+        <footer class="text-center mt-5 mb-3 text-muted">
+            <small>Excel Translation Service v1.0.0 | Powered by OpenAI GPT</small>
+        </footer>
+    </div>
+    
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

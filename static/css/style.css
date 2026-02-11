@@ -1,0 +1,269 @@
+/* Global Styles */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    padding: 20px 0;
+}
+
+.container {
+    max-width: 800px;
+}
+
+/* Card Styles */
+.card {
+    border: none;
+    border-radius: 15px;
+    background: white;
+}
+
+.card-body {
+    padding: 2rem;
+}
+
+/* Form Styles */
+.form-label {
+    color: #333;
+    margin-bottom: 0.5rem;
+}
+
+.form-control,
+.form-select {
+    border-radius: 8px;
+    border: 2px solid #e0e0e0;
+    transition: all 0.3s ease;
+}
+
+.form-control:focus,
+.form-select:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+textarea.form-control {
+    resize: vertical;
+}
+
+/* Button Styles */
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    border-radius: 8px;
+    padding: 12px 24px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+
+.btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-success {
+    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    border: none;
+    border-radius: 8px;
+    padding: 12px 24px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.btn-success:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(17, 153, 142, 0.4);
+}
+
+/* Progress Bar */
+.progress {
+    border-radius: 10px;
+    background-color: #e9ecef;
+}
+
+.progress-bar {
+    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    border-radius: 10px;
+}
+
+/* Alert Styles */
+.alert {
+    border-radius: 8px;
+    border: none;
+}
+
+.alert-success {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.alert-danger {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+/* Info Cards */
+.card.text-center {
+    border: 2px solid #e0e0e0;
+    transition: all 0.3s ease;
+}
+
+.card.text-center:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+    border-color: #667eea;
+}
+
+.card.text-center h3 {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
+
+/* Header Styles */
+.display-4 {
+    color: white;
+    font-weight: 700;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.lead {
+    color: rgba(255, 255, 255, 0.9);
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* Footer */
+footer {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.card {
+    animation: fadeIn 0.5s ease-out;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .container {
+        padding: 10px;
+    }
+    
+    .card-body {
+        padding: 1.5rem;
+    }
+    
+    .display-4 {
+        font-size: 2rem;
+    }
+}
+
+/* File Input Styling */
+input[type="file"]::file-selector-button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    margin-right: 10px;
+    transition: all 0.3s ease;
+}
+
+input[type="file"]::file-selector-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 3px 10px rgba(102, 126, 234, 0.4);
+}
+
+/* Spinner */
+.spinner-border-sm {
+    width: 1rem;
+    height: 1rem;
+    border-width: 0.15em;
+}
+
+
+/* Log Container Styles */
+.log-entry {
+    padding: 8px 12px;
+    margin-bottom: 4px;
+    border-left: 3px solid #ccc;
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    word-wrap: break-word;
+}
+
+.log-entry .log-time {
+    color: #6c757d;
+    font-weight: 600;
+}
+
+.log-entry .log-level {
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin: 0 4px;
+}
+
+.log-info .log-level {
+    background-color: #d1ecf1;
+    color: #0c5460;
+}
+
+.log-warning .log-level {
+    background-color: #fff3cd;
+    color: #856404;
+}
+
+.log-error .log-level {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+.log-debug .log-level {
+    background-color: #e2e3e5;
+    color: #383d41;
+}
+
+#logContainer {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+#logContainer::-webkit-scrollbar {
+    width: 8px;
+}
+
+#logContainer::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+#logContainer::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+#logContainer::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Made with Bob */
+/* Made with Bob */
