@@ -101,11 +101,22 @@ export default function Home() {
   };
 
   const handleDownload = async (filename?: string) => {
-    const fileToDownload = filename || translatedFileName;
-    if (!fileToDownload) return;
+    // If filename is an event object (from onClick), use translatedFileName instead
+    const fileToDownload = (typeof filename === 'string' ? filename : null) || translatedFileName;
+
+    if (!fileToDownload) {
+      console.error("No filename available for download");
+      return;
+    }
 
     try {
       const downloadResponse = await fetch(`/api/download/${fileToDownload}`);
+
+      if (!downloadResponse.ok) {
+        const errorData = await downloadResponse.json().catch(() => ({ detail: "Unknown error" }));
+        throw new Error(errorData.detail || `Download failed with status ${downloadResponse.status}`);
+      }
+
       const blob = await downloadResponse.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -117,7 +128,7 @@ export default function Home() {
       document.body.removeChild(a);
     } catch (error) {
       console.error("Download error:", error);
-      alert("Failed to download file. Please try again.");
+      alert(error instanceof Error ? error.message : "Failed to download file. Please try again.");
     }
   };
 

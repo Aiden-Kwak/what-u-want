@@ -156,7 +156,7 @@ export function TranslationProgress({
       {translatedFileName && !isTranslating && (
         <div className="mt-6 scale-in">
           <button
-            onClick={onDownload}
+            onClick={() => onDownload()}
             className="group w-full flex items-center justify-center gap-3 px-8 py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-bold shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-300"
           >
             <div className="relative">
