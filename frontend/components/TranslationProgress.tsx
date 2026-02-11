@@ -6,12 +6,16 @@ interface TranslationProgressProps {
   isTranslating: boolean;
   progress: number;
   logs: string[];
+  translatedFileName: string | null;
+  onDownload: () => void;
 }
 
 export function TranslationProgress({
   isTranslating,
   progress,
   logs,
+  translatedFileName,
+  onDownload,
 }: TranslationProgressProps) {
   const logsEndRef = useRef<HTMLDivElement>(null);
 
@@ -109,15 +113,14 @@ export function TranslationProgress({
               {logs.map((log, index) => (
                 <div
                   key={index}
-                  className={`py-3 px-4 rounded-xl font-medium transition-all duration-200 hover:scale-[1.01] slide-in-bottom ${
-                    log.includes("✅")
-                      ? "text-green-700 dark:text-green-300 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/30 dark:to-emerald-900/30 border border-green-200 dark:border-green-700 shadow-sm"
-                      : log.includes("❌")
+                  className={`py-3 px-4 rounded-xl font-medium transition-all duration-200 hover:scale-[1.01] slide-in-bottom ${log.includes("✅")
+                    ? "text-green-700 dark:text-green-300 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/30 dark:to-emerald-900/30 border border-green-200 dark:border-green-700 shadow-sm"
+                    : log.includes("❌")
                       ? "text-red-700 dark:text-red-300 bg-gradient-to-r from-red-50 to-pink-50 dark:from-red-900/30 dark:to-pink-900/30 border border-red-200 dark:border-red-700 shadow-sm"
                       : log.includes("📦")
-                      ? "text-blue-700 dark:text-blue-300 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/30 dark:to-cyan-900/30 border border-blue-200 dark:border-blue-700 shadow-sm"
-                      : "text-gray-700 dark:text-gray-300 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm border border-gray-200/50 dark:border-gray-700/50"
-                  }`}
+                        ? "text-blue-700 dark:text-blue-300 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/30 dark:to-cyan-900/30 border border-blue-200 dark:border-blue-700 shadow-sm"
+                        : "text-gray-700 dark:text-gray-300 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm border border-gray-200/50 dark:border-gray-700/50"
+                    }`}
                 >
                   <span className="text-gray-500 dark:text-gray-400 mr-2 text-xs font-bold">
                     [{new Date().toLocaleTimeString()}]
@@ -146,6 +149,24 @@ export function TranslationProgress({
             />
           </div>
           <span>Translation in progress...</span>
+        </div>
+      )}
+
+      {/* Download Button - Show when translation is complete */}
+      {translatedFileName && !isTranslating && (
+        <div className="mt-6 scale-in">
+          <button
+            onClick={onDownload}
+            className="group w-full flex items-center justify-center gap-3 px-8 py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-bold shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-300"
+          >
+            <div className="relative">
+              <div className="absolute inset-0 bg-white/30 rounded-lg blur-md opacity-0 group-hover:opacity-100 transition-opacity" />
+              <svg className="relative w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+            </div>
+            <span className="text-lg">Download Translated File</span>
+          </button>
         </div>
       )}
     </div>

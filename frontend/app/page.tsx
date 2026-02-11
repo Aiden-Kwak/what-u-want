@@ -15,6 +15,7 @@ export default function Home() {
   const [logs, setLogs] = useState<string[]>([]);
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [apiKey, setApiKey] = useState("");
+  const [translatedFileName, setTranslatedFileName] = useState<string | null>(null);
   const sessionIdRef = useRef<string>("");
 
   useEffect(() => {
@@ -79,19 +80,11 @@ export default function Home() {
 
       const result = await response.json();
 
-      // Download the translated file
-      const downloadResponse = await fetch(
-        `/api/download/${result.output_filename}`
-      );
-      const blob = await downloadResponse.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = result.output_filename;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      // Save the translated filename
+      setTranslatedFileName(result.output_filename);
+
+      // Download the translated file automatically
+      await handleDownload(result.output_filename);
 
       setProgress(100);
       setLogs((prev) => [...prev, "✅ Translation completed successfully!"]);
@@ -104,6 +97,27 @@ export default function Home() {
     } finally {
       setIsTranslating(false);
       eventSource.close();
+    }
+  };
+
+  const handleDownload = async (filename?: string) => {
+    const fileToDownload = filename || translatedFileName;
+    if (!fileToDownload) return;
+
+    try {
+      const downloadResponse = await fetch(`/api/download/${fileToDownload}`);
+      const blob = await downloadResponse.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileToDownload;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error("Download error:", error);
+      alert("Failed to download file. Please try again.");
     }
   };
 
@@ -274,6 +288,8 @@ export default function Home() {
               isTranslating={isTranslating}
               progress={progress}
               logs={logs}
+              translatedFileName={translatedFileName}
+              onDownload={handleDownload}
             />
           </div>
         </div>
