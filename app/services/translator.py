@@ -1,5 +1,5 @@
 from openai import OpenAI
-from typing import Dict, List
+from typing import Dict, List, Optional, Callable
 from app.core.exceptions import GPTAPIError
 from app.core.prompts import SYSTEM_PROMPT_JSON, generate_user_prompt_json
 import re
@@ -14,16 +14,18 @@ logger = logging.getLogger(__name__)
 class TranslationService:
     """Handle GPT-based translation"""
     
-    def __init__(self, api_key: str, model: str = "gpt-4.1-nano"):
+    def __init__(self, api_key: str, model: str = "gpt-4.1-nano", progress_callback: Optional[Callable] = None):
         """
         Initialize translation service
         
         Args:
             api_key: OpenAI API key
             model: GPT model to use
+            progress_callback: Optional callback function for progress updates
         """
         self.client = OpenAI(api_key=api_key)
         self.model = model
+        self.progress_callback = progress_callback
     
     def _csv_to_json(self, csv_content: str) -> List[Dict]:
         """Convert CSV string to JSON array of objects"""
@@ -241,18 +243,26 @@ class TranslationService:
         
         logger.info(f"Splitting {len(json_data)} rows into {total_chunks} chunks of {chunk_size} rows each")
         
+        # Notify about total chunks if callback exists
+        if self.progress_callback:
+            self.progress_callback('chunks_total', total_chunks)
+        
         for i in range(0, len(json_data), chunk_size):
             chunk = json_data[i:i + chunk_size]
             chunk_num = (i // chunk_size) + 1
             
-            logger.info(f"📦 Translating chunk {chunk_num}/{total_chunks} ({len(chunk)} rows)")
+            logger.info(f"📦 청크 {chunk_num}/{total_chunks} 번역 시작 ({len(chunk)} rows)")
             
             try:
                 # Translate this chunk (returns JSON directly)
                 chunk_json = self._translate_json_data(chunk, source_lang, target_lang)
                 translated_chunks.extend(chunk_json)
                 
-                logger.info(f"✅ Chunk {chunk_num}/{total_chunks} completed ({len(chunk_json)} rows)")
+                logger.info(f"✅ 청크 {chunk_num}/{total_chunks} 번역 완료 ({len(chunk_json)} rows)")
+                
+                # Notify progress if callback exists
+                if self.progress_callback:
+                    self.progress_callback('chunk_complete', chunk_num, total_chunks)
                 
             except Exception as e:
                 logger.error(f"❌ Chunk {chunk_num}/{total_chunks} failed: {str(e)}")

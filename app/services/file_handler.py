@@ -17,15 +17,6 @@ class FileHandler:
     async def save_upload_file(self, upload_file: UploadFile) -> Path:
         """
         Save uploaded file to temp directory
-        
-        Args:
-            upload_file: Uploaded file from FastAPI
-            
-        Returns:
-            Path to saved file
-            
-        Raises:
-            InvalidFileFormatError: If file validation fails
         """
         # Validate extension
         validate_file_extension(upload_file.filename)
@@ -35,9 +26,15 @@ class FileHandler:
         unique_filename = f"{uuid.uuid4()}{file_ext}"
         file_path = self.temp_dir / unique_filename
         
-        # Save file
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(upload_file.file, buffer)
+        # Save file (using thread pool for blocking IO)
+        import asyncio
+        from functools import partial
+        
+        def save_sync():
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(upload_file.file, buffer)
+        
+        await asyncio.to_thread(save_sync)
         
         # Validate size
         file_size = file_path.stat().st_size

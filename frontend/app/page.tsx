@@ -27,37 +27,67 @@ export default function Home() {
   }, []);
 
   const handleTranslate = async () => {
+    if (!sessionIdRef.current) {
+      sessionIdRef.current = crypto.randomUUID();
+    }
+
     if (!file) {
-      alert("Please select a file first");
+      alert("Please upload a file first");
       return;
     }
 
     if (!apiKey) {
-      setShowApiKeyModal(true);
+      alert("Please enter your OpenAI API Key");
       return;
     }
 
     setIsTranslating(true);
     setProgress(0);
     setLogs([]);
+    setTranslatedFileName(null);
 
-    // Generate session ID
-    sessionIdRef.current = crypto.randomUUID();
+    // Use environment variable for API URL (defaults to localhost:8000)
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
 
     // Start SSE connection for logs
     const eventSource = new EventSource(
-      `/api/logs/stream?session_id=${sessionIdRef.current}`
+      `${API_URL}/api/logs/stream?session_id=${sessionIdRef.current}`
     );
 
     eventSource.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.log) {
-        setLogs((prev) => [...prev, data.log]);
+      try {
+        const data = JSON.parse(event.data);
+        const message = data.message || data.log;
+
+        if (message) {
+          // Detect DOWNLOAD_READY signal from background task
+          if (message.includes("DOWNLOAD_READY:")) {
+            const filename = message.split("DOWNLOAD_READY:")[1].trim();
+            setTranslatedFileName(filename);
+            handleDownload(filename);
+            setProgress(100);
+            setLogs((prev) => [...prev, "✅ Translation finished! File is ready."]);
+            return; // Keep connection open briefly or close? Usually keep open until user leaves.
+          }
+
+          // Check if this is a milestone or progress log
+          if (message.includes("📍 MILESTONE") || message.includes("📦 PROGRESS") || message.includes("✅ COMPLETE")) {
+            const percentMatch = message.match(/\((\d+)%\)/);
+            if (percentMatch) {
+              setProgress(parseInt(percentMatch[1]));
+            }
+          }
+
+          setLogs((prev) => [...prev, message]);
+        }
+      } catch (error) {
+        console.warn("Failed to parse SSE message:", event.data, error);
       }
     };
 
     eventSource.onerror = () => {
-      eventSource.close();
+      // Don't close immediately on error, retry might happen or connection just flaky
+      // eventSource.close(); 
     };
 
     try {
@@ -68,39 +98,52 @@ export default function Home() {
       formData.append("target_lang", targetLang);
       formData.append("session_id", sessionIdRef.current);
 
-      const response = await fetch("/api/translate", {
+      const response = await fetch(`${API_URL}/api/translate`, {
         method: "POST",
         body: formData,
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || "Translation failed");
+      const responseData = await response.text();
+      let result = null;
+
+      try {
+        result = JSON.parse(responseData);
+      } catch (e) {
+        // Not JSON
       }
 
-      const result = await response.json();
+      if (!response.ok) {
+        let errorMessage = "Translation failed";
+        if (result && result.detail) {
+          errorMessage = result.detail;
+        } else {
+          errorMessage = responseData.includes("Internal Server Error")
+            ? "Server Timeout or Proxy Error. Check logs for progress."
+            : responseData.substring(0, 150) || response.statusText;
+        }
+        throw new Error(errorMessage);
+      }
 
-      // Save the translated filename (backend uses 'filename' field)
-      setTranslatedFileName(result.filename);
+      // Successful job start message (if we reach here)
+      setLogs((prev) => [...prev, "🚀 Translation job requested successfully."]);
 
-      // Download the translated file automatically
-      await handleDownload(result.filename);
-
-      setProgress(100);
-      setLogs((prev) => [...prev, "✅ Translation completed successfully!"]);
     } catch (error) {
-      console.error("Translation error:", error);
+      console.error("Translation request error:", error);
+      const errorMsg = error instanceof Error ? error.message : "Unknown error";
+
       setLogs((prev) => [
         ...prev,
-        `❌ Error: ${error instanceof Error ? error.message : "Unknown error"}`,
+        `⚠️ Request Warning: ${errorMsg}`,
+        "ℹ️ The translation might still be starting in the background. Please watch the logs below."
       ]);
-    } finally {
-      setIsTranslating(false);
-      eventSource.close();
+
+      // Do NOT set isTranslating to false or close eventSource here
+      // unless we are sure the job failed to even start.
+      // If it's a timeout, the background task is likely already running.
     }
   };
 
-  const handleDownload = async (filename?: string) => {
+  const handleDownload = (filename?: string) => {
     // If filename is an event object (from onClick), use translatedFileName instead
     const fileToDownload = (typeof filename === 'string' ? filename : null) || translatedFileName;
 
@@ -109,27 +152,15 @@ export default function Home() {
       return;
     }
 
-    try {
-      const downloadResponse = await fetch(`/api/download/${fileToDownload}`);
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
 
-      if (!downloadResponse.ok) {
-        const errorData = await downloadResponse.json().catch(() => ({ detail: "Unknown error" }));
-        throw new Error(errorData.detail || `Download failed with status ${downloadResponse.status}`);
-      }
-
-      const blob = await downloadResponse.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileToDownload;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (error) {
-      console.error("Download error:", error);
-      alert(error instanceof Error ? error.message : "Failed to download file. Please try again.");
-    }
+    // Create a direct link for download
+    const a = document.createElement("a");
+    a.href = `${API_URL}/api/download/${encodeURIComponent(fileToDownload)}`;
+    a.download = fileToDownload;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   const handleSaveApiKey = (key: string) => {

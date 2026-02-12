@@ -1,7 +1,10 @@
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request, BackgroundTasks
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pathlib import Path
 from typing import Optional, Dict
+import json
+import asyncio
+import queue
 from app.services.file_handler import FileHandler
 from app.services.converter import ExcelConverter
 from app.services.translator import TranslationService
@@ -10,6 +13,7 @@ from app.core.exceptions import TranslationError
 from app.core.config import settings
 from app.core.prompts import get_available_languages
 from app.utils.log_handler import create_session, get_log_queue, cleanup_session, add_session_handler, remove_session_handler
+from app.utils.progress_tracker import get_progress_tracker, cleanup_progress_tracker, TranslationStage
 import logging
 import uuid
 import asyncio
@@ -31,6 +35,7 @@ async def get_languages():
 
 @router.post("/translate", response_model=TranslationResponse)
 async def translate_file(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     api_key: Optional[str] = Form(None),
     source_lang: str = Form(default="ko"),
@@ -39,41 +44,77 @@ async def translate_file(
     session_id: Optional[str] = Form(None)
 ):
     """
-    Translate Excel/CSV file using GPT
-    
-    Args:
-        file: Uploaded Excel or CSV file
-        api_key: OpenAI API key
-        source_lang: Source language code (e.g., 'ko', 'en')
-        target_lang: Target language code (e.g., 'en', 'ko')
-        model: GPT model to use
-        session_id: Session ID for log streaming
-        
-    Returns:
-        TranslationResponse with download URL
+    Lightning fast entry point: Just queue the task and return
     """
+    # Quick check for API key
+    final_api_key = api_key if api_key else settings.OPENAI_API_KEY
+    if not final_api_key:
+        raise HTTPException(status_code=400, detail="API key is required.")
+
+    # Read file content into memory immediately to keep it available for background task
+    file_content = await file.read()
+    filename = file.filename
+    
+    # Offload EVERYTHING else to background
+    background_tasks.add_task(
+        run_translation_task_full,
+        file_content=file_content,
+        filename=filename,
+        api_key=final_api_key,
+        source_lang=source_lang,
+        target_lang=target_lang,
+        model=model,
+        session_id=session_id
+    )
+    
+    return TranslationResponse(
+        success=True,
+        message="Job queued successfully",
+        download_url="",
+        filename=filename,
+        sheets_processed=0
+    )
+
+
+async def run_translation_task_full(
+    file_content: bytes,
+    filename: str,
+    api_key: str,
+    source_lang: str,
+    target_lang: str,
+    model: str,
+    session_id: Optional[str]
+):
+    """
+    Heavy lifting background worker
+    """
+    import os
+    import uuid
+    from app.services.file_handler import FileHandler
+    
     file_handler = FileHandler()
     input_path = None
-    output_path = None
     log_handler = None
+    progress_tracker = None
     
     try:
-        # Add session log handler if session_id provided
         if session_id:
             log_handler = add_session_handler(session_id)
+            progress_tracker = get_progress_tracker(session_id)
         
-        # Determine which API key to use
-        final_api_key = api_key if api_key else settings.OPENAI_API_KEY
+        if progress_tracker:
+            progress_tracker.set_stage(TranslationStage.UPLOAD, "파일 저장 및 분석 중")
         
-        if not final_api_key:
-            raise HTTPException(
-                status_code=400,
-                detail="API key is required. Please provide it in the form or set OPENAI_API_KEY in .env file."
-            )
+        # 1. Save file from memory bytes
+        file_ext = Path(filename).suffix
+        unique_filename = f"{uuid.uuid4()}{file_ext}"
+        input_path = Path("temp") / unique_filename
+        input_path.parent.mkdir(exist_ok=True)
         
-        # Save uploaded file
-        input_path = await file_handler.save_upload_file(file)
-        logger.info(f"File uploaded: {input_path}")
+        with open(input_path, "wb") as f:
+            f.write(file_content)
+        
+        logger.info(f"Background task: File saved to {input_path}")
         
         # Determine file type
         file_ext = input_path.suffix.lower()
@@ -84,13 +125,42 @@ async def translate_file(
         else:  # .csv
             csv_content = ExcelConverter.csv_file_to_string(input_path)
             csv_dict = {"Sheet1": csv_content}
-        
+            
         total_sheets = len(csv_dict)
         logger.info(f"Sheets to translate: {list(csv_dict.keys())} (Total: {total_sheets})")
         logger.info(f"Translation: {source_lang} -> {target_lang}")
         
+        if progress_tracker:
+            progress_tracker.complete_stage(TranslationStage.UPLOAD, f"파일 분석 완료 ({total_sheets}개 시트)")
+        
+        # Stage 2: Preparation (10-20%)
+        if progress_tracker:
+            progress_tracker.set_stage(TranslationStage.PREPARATION, "번역 준비 중")
+        
+        # Define progress callback for translator
+        def translation_progress_callback(event_type: str, *args):
+            if not progress_tracker:
+                return
+            
+            if event_type == 'chunks_total':
+                total_chunks = args[0]
+                progress_tracker.set_translation_chunks(total_chunks)
+            elif event_type == 'chunk_complete':
+                current, total = args[0], args[1]
+                progress_tracker.increment_chunk(current, total)
+        
         # Translate with progress tracking
-        translator = TranslationService(api_key=final_api_key, model=model)
+        translator = TranslationService(
+            api_key=api_key, 
+            model=model,
+            progress_callback=translation_progress_callback
+        )
+        
+        if progress_tracker:
+            progress_tracker.complete_stage(TranslationStage.PREPARATION, "번역 준비 완료")
+            progress_tracker.set_stage(TranslationStage.TRANSLATION, "AI 번역 시작")
+        
+        # Stage 3: Translation (20-80%)
         translated_dict = {}
         
         for idx, (sheet_name, csv_content) in enumerate(csv_dict.items(), 1):
@@ -106,34 +176,49 @@ async def translate_file(
         
         logger.info("All translations completed")
         
+        if progress_tracker:
+            progress_tracker.complete_stage(TranslationStage.TRANSLATION, "모든 번역 완료")
+        
+        # Stage 4: Excel Generation (80-95%)
+        if progress_tracker:
+            progress_tracker.set_stage(TranslationStage.EXCEL_GENERATION, "엑셀 파일 생성 중")
+        
         # Convert back to Excel
-        original_filename = file.filename or "translated_file.xlsx"
-        output_filename = file_handler.generate_output_filename(original_filename)
-        output_path = file_handler.temp_dir / output_filename
+        output_filename = f"{input_path.stem}_translated.xlsx"
+        output_path = Path("temp") / output_filename
         ExcelConverter.csv_to_excel(translated_dict, output_path)
         
         logger.info(f"Output file created: {output_path}")
         
-        return TranslationResponse(
-            success=True,
-            message="Translation completed successfully",
-            download_url=f"/api/download/{output_filename}",
-            filename=output_filename,
-            sheets_processed=len(translated_dict)
-        )
+        if progress_tracker:
+            progress_tracker.complete_stage(TranslationStage.EXCEL_GENERATION, f"생성 완료: {output_filename}")
         
+        # Stage 5: Complete (95-100%)
+        if progress_tracker:
+            progress_tracker.set_stage(TranslationStage.COMPLETE, "번역 완료!")
+            progress_tracker.complete_stage(TranslationStage.COMPLETE, "다운로드 준비 완료")
+            # CRITICAL: Send filename via log for frontend to capture
+            logger.info(f"✅ COMPLETE: DOWNLOAD_READY:{output_filename}")
+            progress_tracker.complete_stage(TranslationStage.COMPLETE, "번역 프로세스 종료")
+            
     except TranslationError as e:
-        logger.error(f"Translation error: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"Background translation task failed: {str(e)}")
+        if progress_tracker:
+            progress_tracker.set_stage(TranslationStage.COMPLETE, f"❌ 에러 발생: {str(e)}")
     
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        logger.error(f"Unexpected error in background task: {str(e)}")
+        if progress_tracker:
+            progress_tracker.set_stage(TranslationStage.COMPLETE, f"❌ 에러 발생: {str(e)}")
     
     finally:
         # Remove log handler
         if log_handler:
             remove_session_handler(log_handler)
+        
+        # Cleanup progress tracker
+        if session_id:
+            cleanup_progress_tracker(session_id)
         
         # Cleanup input file
         if input_path:
