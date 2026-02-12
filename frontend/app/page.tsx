@@ -54,23 +54,45 @@ export default function Home() {
       `${API_URL}/api/logs/stream?session_id=${sessionIdRef.current}`
     );
 
+    // Promise to wait for SSE connection
+    const connectionPromise = new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error("Log stream connection timeout"));
+      }, 5000);
+
+      eventSource.onopen = () => {
+        clearTimeout(timeout);
+        resolve();
+      };
+
+      eventSource.onerror = () => {
+        // Only reject if we haven't connected yet (readyState 0 or 2)
+        if (eventSource.readyState === 0 || eventSource.readyState === 2) {
+          // We'll let the onmessage handler deal with errors during streaming,
+          // but initial connection failure should be caught here.
+          // However, standard EventSource reconnects on error, so we must be careful not to reject too early unless it's a fatal setup error.
+          // For simplicity, we just rely on timeout for initial connection failure.
+        }
+      };
+    });
+
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         const message = data.message || data.log;
 
         if (message) {
-          // Detect DOWNLOAD_READY signal from background task
+          // Detect DOWNLOAD_READY signaling completion
           if (message.includes("DOWNLOAD_READY:")) {
             const filename = message.split("DOWNLOAD_READY:")[1].trim();
             setTranslatedFileName(filename);
             handleDownload(filename);
             setProgress(100);
             setLogs((prev) => [...prev, "✅ Translation finished! File is ready."]);
-            return; // Keep connection open briefly or close? Usually keep open until user leaves.
+            return;
           }
 
-          // Check if this is a milestone or progress log
+          // Check for milestones to update progress bar
           if (message.includes("📍 MILESTONE") || message.includes("📦 PROGRESS") || message.includes("✅ COMPLETE")) {
             const percentMatch = message.match(/\((\d+)%\)/);
             if (percentMatch) {
@@ -78,6 +100,7 @@ export default function Home() {
             }
           }
 
+          // Force UI update for every log
           setLogs((prev) => [...prev, message]);
         }
       } catch (error) {
@@ -85,12 +108,11 @@ export default function Home() {
       }
     };
 
-    eventSource.onerror = () => {
-      // Don't close immediately on error, retry might happen or connection just flaky
-      // eventSource.close(); 
-    };
-
     try {
+      // 1. Wait for SSE connection first
+      await connectionPromise;
+
+      // 2. Then send the translation request
       const formData = new FormData();
       formData.append("file", file);
       formData.append("api_key", apiKey);

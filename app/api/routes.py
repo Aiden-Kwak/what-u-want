@@ -86,10 +86,11 @@ async def run_translation_task_full(
     session_id: Optional[str]
 ):
     """
-    Heavy lifting background worker
+    Heavy lifting background worker with non-blocking execution
     """
     import os
     import uuid
+    import asyncio
     from app.services.file_handler import FileHandler
     
     file_handler = FileHandler()
@@ -105,39 +106,49 @@ async def run_translation_task_full(
         if progress_tracker:
             progress_tracker.set_stage(TranslationStage.UPLOAD, "파일 저장 및 분석 중")
         
-        # 1. Save file from memory bytes
+        # 1. Save file from memory bytes (Blocking I/O in thread)
         file_ext = Path(filename).suffix
         unique_filename = f"{uuid.uuid4()}{file_ext}"
         input_path = Path("temp") / unique_filename
         input_path.parent.mkdir(exist_ok=True)
         
-        with open(input_path, "wb") as f:
-            f.write(file_content)
+        def save_file_sync():
+            with open(input_path, "wb") as f:
+                f.write(file_content)
         
+        await asyncio.to_thread(save_file_sync)
         logger.info(f"Background task: File saved to {input_path}")
+        
+        # Yield to event loop to let logs flush
+        await asyncio.sleep(0.01)
         
         # Determine file type
         file_ext = input_path.suffix.lower()
         
-        # Convert to CSV dict
-        if file_ext == '.xlsx':
-            csv_dict = ExcelConverter.excel_to_csv_dict(input_path)
-        else:  # .csv
-            csv_content = ExcelConverter.csv_file_to_string(input_path)
-            csv_dict = {"Sheet1": csv_content}
+        # Convert to CSV dict (Blocking CPU/IO in thread)
+        def convert_to_csv_sync():
+            if file_ext == '.xlsx':
+                return ExcelConverter.excel_to_csv_dict(input_path)
+            else:
+                content = ExcelConverter.csv_file_to_string(input_path)
+                return {"Sheet1": content}
+        
+        csv_dict = await asyncio.to_thread(convert_to_csv_sync)
             
         total_sheets = len(csv_dict)
         logger.info(f"Sheets to translate: {list(csv_dict.keys())} (Total: {total_sheets})")
         logger.info(f"Translation: {source_lang} -> {target_lang}")
         
         if progress_tracker:
-            progress_tracker.complete_stage(TranslationStage.UPLOAD, f"파일 분석 완료 ({total_sheets}개 시트)")
-        
-        # Stage 2: Preparation (10-20%)
-        if progress_tracker:
+            progress_tracker.complete_stage(TranslationStage.UPLOAD, f"분석 완료 ({total_sheets}개 시트)")
             progress_tracker.set_stage(TranslationStage.PREPARATION, "번역 준비 중")
         
+        await asyncio.sleep(0.01)
+        
         # Define progress callback for translator
+        # Since this runs in a thread, we need to be careful with async calls.
+        # However, the tracker's methods are simple sync updaters, which IS OK.
+        # But logging inside tracker might block slightly. Usually negligible.
         def translation_progress_callback(event_type: str, *args):
             if not progress_tracker:
                 return
@@ -159,63 +170,71 @@ async def run_translation_task_full(
         if progress_tracker:
             progress_tracker.complete_stage(TranslationStage.PREPARATION, "번역 준비 완료")
             progress_tracker.set_stage(TranslationStage.TRANSLATION, "AI 번역 시작")
+            
+        await asyncio.sleep(0.01)
         
         # Stage 3: Translation (20-80%)
         translated_dict = {}
         
         for idx, (sheet_name, csv_content) in enumerate(csv_dict.items(), 1):
             logger.info(f"Translating sheet {idx}/{total_sheets}: {sheet_name}")
-            translated_content = translator.translate_csv(
+            
+            # Run translation in thread to unblock SSE stream!
+            translated_content = await asyncio.to_thread(
+                translator.translate_csv,
                 csv_content,
                 source_lang,
                 target_lang,
                 sheet_name
             )
+            
             translated_dict[sheet_name] = translated_content
             logger.info(f"Completed sheet {idx}/{total_sheets}: {sheet_name}")
+            # Yield control again
+            await asyncio.sleep(0.01)
         
         logger.info("All translations completed")
         
         if progress_tracker:
             progress_tracker.complete_stage(TranslationStage.TRANSLATION, "모든 번역 완료")
-        
-        # Stage 4: Excel Generation (80-95%)
-        if progress_tracker:
             progress_tracker.set_stage(TranslationStage.EXCEL_GENERATION, "엑셀 파일 생성 중")
         
-        # Convert back to Excel
-        output_filename = f"{input_path.stem}_translated.xlsx"
+        await asyncio.sleep(0.01)
+
+        # Stage 4: Excel Generation (80-95%)
+        # Fix filename: Use original filename stem, not UUID
+        original_stem = Path(filename).stem
+        output_filename = f"{original_stem}_translated.xlsx"
         output_path = Path("temp") / output_filename
-        ExcelConverter.csv_to_excel(translated_dict, output_path)
+        
+        # Run Excel generation in thread
+        await asyncio.to_thread(
+            ExcelConverter.csv_to_excel,
+            translated_dict, 
+            output_path
+        )
         
         logger.info(f"Output file created: {output_path}")
         
         if progress_tracker:
             progress_tracker.complete_stage(TranslationStage.EXCEL_GENERATION, f"생성 완료: {output_filename}")
+            progress_tracker.set_stage(TranslationStage.COMPLETE, "마무리 중")
         
+        await asyncio.sleep(0.01)
+
         # Stage 5: Complete (95-100%)
         if progress_tracker:
-            progress_tracker.set_stage(TranslationStage.COMPLETE, "번역 완료!")
             progress_tracker.complete_stage(TranslationStage.COMPLETE, "다운로드 준비 완료")
             # CRITICAL: Send filename via log for frontend to capture
             logger.info(f"✅ COMPLETE: DOWNLOAD_READY:{output_filename}")
             progress_tracker.complete_stage(TranslationStage.COMPLETE, "번역 프로세스 종료")
             
-    except TranslationError as e:
-        logger.error(f"Background translation task failed: {str(e)}")
-        if progress_tracker:
-            progress_tracker.set_stage(TranslationStage.COMPLETE, f"❌ 에러 발생: {str(e)}")
-    
     except Exception as e:
-        logger.error(f"Unexpected error in background task: {str(e)}")
+        logger.error(f"Background task failed: {str(e)}")
         if progress_tracker:
             progress_tracker.set_stage(TranslationStage.COMPLETE, f"❌ 에러 발생: {str(e)}")
     
     finally:
-        # Remove log handler
-        if log_handler:
-            remove_session_handler(log_handler)
-        
         # Cleanup progress tracker
         if session_id:
             cleanup_progress_tracker(session_id)
